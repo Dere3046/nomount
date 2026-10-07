@@ -75,8 +75,8 @@ setup_nomount() {
     fi
 
     cd "$FS_DIR"
-    ln -sfn "$(realpath --relative-to="$FS_DIR" "$REPO_DIR/kernel/src")" "nomount"
-    echo "[+] Symlink created (fs/nomount -> kernel/src)."
+    ln -sfn "$(realpath --relative-to="$FS_DIR" "$REPO_DIR/kernel")" "nomount"
+    echo "[+] Symlink created (fs/nomount -> kernel)."
 
     if ! grep -q "nomount" "$FS_MAKEFILE"; then
         printf "\nobj-\$(CONFIG_NOMOUNT) += nomount/\n" >> "$FS_MAKEFILE"

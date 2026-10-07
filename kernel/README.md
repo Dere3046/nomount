@@ -61,7 +61,7 @@ obj-$(CONFIG_NOMOUNT) += nomount/
 Transfer the NoMount code (`src/`) to the `fs/nomount/` directory of your kernel tree.
 ```bash
 mkdir -p <your kernel source>/fs/nomount
-cp -f <path of nomount>/kernel/src/* <your kernel source>/fs/nomount
+cp -rf <path of nomount>/kernel/. <your kernel source>/fs/nomount/
 ```
 
 4. **Enable NoMount:**

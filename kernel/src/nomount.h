@@ -337,9 +337,11 @@ static inline int nm_call_iterate(struct file *file, struct dir_context *ctx, co
     return -ENOTDIR;
 }
 
+static struct dentry *nm_d_lookup(const struct dentry *dir, const struct qstr *name);
+
 static inline struct dentry *nm_hash_and_lookup(struct dentry *dir, struct qstr *n) {
     n->hash = full_name_hash(dir, n->name, n->len);
-    return (unlikely(dir->d_flags & DCACHE_OP_HASH) && dir->d_op->d_hash(dir, n) < 0) ? NULL : d_lookup(dir, n);
+    return (unlikely(dir->d_flags & DCACHE_OP_HASH) && dir->d_op->d_hash(dir, n) < 0) ? NULL : nm_d_lookup(dir, n);
 }
 
 static inline struct nm_dir_ops *nm_get_nm_iop(const struct inode_operations *iop) {

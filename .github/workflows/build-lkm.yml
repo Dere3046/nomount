@@ -92,7 +92,7 @@ jobs:
       image: ghcr.io/ylarod/ddk-min:${{ matrix.kmi }}
 
     env:
-      SRC_DIR: ${{ github.workspace }}/kernel/src
+      SRC_DIR: ${{ github.workspace }}/kernel
       ARTIFACT: artifacts/nomount-${{ matrix.kmi }}.ko
 
     steps:

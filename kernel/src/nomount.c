@@ -7,6 +7,53 @@
 #include <linux/module.h>
 #include "nomount.h"
 
+#include "core.h"
+
+typedef struct dentry *(*nm_d_lookup_fn)(const struct dentry *, const struct qstr *);
+typedef const char *(*nm_xattr_full_name_fn)(const struct xattr_handler *, const char *);
+typedef ssize_t (*nm_vfs_getxattr_fn)(struct dentry *, struct inode *, const char *, void *, size_t);
+typedef int (*nm_vfs_setxattr_fn)(IDMAP_ARG struct dentry *, struct inode *, const char *, const void *, size_t, int);
+typedef void (*nm_shrink_dcache_parent_fn)(struct dentry *);
+
+static nm_d_lookup_fn nm_d_lookup_ptr;
+static nm_xattr_full_name_fn nm_xattr_full_name_ptr;
+static nm_vfs_getxattr_fn nm_vfs_getxattr_ptr;
+static nm_vfs_setxattr_fn nm_vfs_setxattr_ptr;
+static nm_shrink_dcache_parent_fn nm_shrink_dcache_parent_ptr;
+
+static __nocfi unsigned long nm_resolve_sym(const char *name)
+{
+    unsigned long addr = kallrecon_klp ? kallrecon_klp(name) : 0;
+
+    if (!addr) addr = kallsyms_name_to_addr(name);
+    return addr;
+}
+
+static __nocfi struct dentry *nm_d_lookup(const struct dentry *dir, const struct qstr *name)
+{
+    return nm_d_lookup_ptr ? nm_d_lookup_ptr(dir, name) : NULL;
+}
+
+static __nocfi const char *nm_xattr_full_name(const struct xattr_handler *handler, const char *name)
+{
+    return nm_xattr_full_name_ptr ? nm_xattr_full_name_ptr(handler, name) : name;
+}
+
+static __nocfi ssize_t nm_vfs_getxattr(struct dentry *dentry, struct inode *inode, const char *name, void *value, size_t size)
+{
+    return nm_vfs_getxattr_ptr ? nm_vfs_getxattr_ptr(dentry, inode, name, value, size) : -ENOSYS;
+}
+
+static __nocfi int nm_vfs_setxattr(IDMAP_ARG struct dentry *dentry, struct inode *inode, const char *name, const void *value, size_t size, int flags)
+{
+    return nm_vfs_setxattr_ptr ? nm_vfs_setxattr_ptr(IDMAP_CALL dentry, inode, name, value, size, flags) : -ENOSYS;
+}
+
+static __nocfi void nm_shrink_dcache_parent(struct dentry *dentry)
+{
+    if (nm_shrink_dcache_parent_ptr) nm_shrink_dcache_parent_ptr(dentry);
+}
+
 /*** Helpers ***/
 
 static bool nm_block_isolated_uids = false;
@@ -702,7 +749,7 @@ static int nm_xattr_get(const struct xattr_handler *handler, struct dentry *dent
     if (inode->i_op == &nm_file_iops || inode->i_op == &nm_dir_iops) {
         struct nm_inode_info *info = inode->i_private;
         if (unlikely(!info || !info->rule->r_path.dentry)) return -ENODATA;
-        return __vfs_getxattr(info->rule->r_path.dentry, d_inode(info->rule->r_path.dentry), xattr_full_name(handler, name), buffer, size FLAGS_VAL);
+        return nm_vfs_getxattr(info->rule->r_path.dentry, d_inode(info->rule->r_path.dentry), nm_xattr_full_name(handler, name), buffer, size FLAGS_VAL);
     }
 
     return proxy->orig->get(proxy->orig, dentry, inode, name, buffer, size FLAGS_VAL);
@@ -716,7 +763,7 @@ static int nm_xattr__get(const struct xattr_handler *handler, struct dentry *den
     if (inode->i_op == &nm_file_iops || inode->i_op == &nm_dir_iops) {
         struct nm_inode_info *info = inode->i_private;
         if (unlikely(!info || !info->rule->r_path.dentry)) return -ENODATA;
-        return __vfs_getxattr(info->rule->r_path.dentry, d_inode(info->rule->r_path.dentry), xattr_full_name(handler, name), buffer, size);
+        return nm_vfs_getxattr(info->rule->r_path.dentry, d_inode(info->rule->r_path.dentry), nm_xattr_full_name(handler, name), buffer, size);
     }
 
     if (proxy->orig->__get)
@@ -731,7 +778,7 @@ static int nm_xattr_set(const struct xattr_handler *handler, IDMAP_ARG struct de
     if (inode->i_op == &nm_file_iops || inode->i_op == &nm_dir_iops) {
         struct nm_inode_info *info = inode->i_private;
         if (unlikely(!info || !info->rule->r_path.dentry)) return -ENODATA;
-        return __vfs_setxattr(IDMAP_PATH(info->rule->r_path) info->rule->r_path.dentry, d_inode(info->rule->r_path.dentry), xattr_full_name(handler, name), buffer, size, flags);
+        return nm_vfs_setxattr(IDMAP_PATH(info->rule->r_path) info->rule->r_path.dentry, d_inode(info->rule->r_path.dentry), nm_xattr_full_name(handler, name), buffer, size, flags);
     }
     return proxy->orig->set(proxy->orig, IDMAP_CALL dentry, inode, name, buffer, size, flags);
 }
@@ -1230,7 +1277,7 @@ static int nomount_generate_virtual_topology(struct nomount_leaf *target, unsign
             if (!err && parent->anchor.dentry) {
                 nomount_hijack_dir_ops(parent->this_dir, d_backing_inode(parent->anchor.dentry));
                 nomount_hijack_superblock(parent->anchor.dentry->d_sb);
-                shrink_dcache_parent(parent->anchor.dentry);
+                nm_shrink_dcache_parent(parent->anchor.dentry);
             }
             break;
         }
@@ -1263,7 +1310,7 @@ static int nomount_generate_virtual_topology(struct nomount_leaf *target, unsign
                     nomount_hijack_dir_ops(dir, inode);
                     nomount_hijack_superblock(path.dentry->d_sb);
                 }
-                shrink_dcache_parent(path.dentry);
+                nm_shrink_dcache_parent(path.dentry);
                 struct dentry *child = nm_hash_and_lookup(path.dentry, &(struct qstr)QSTR_INIT(name, name_len));
                 if (child) { d_drop(child); dput(child); }
             }
@@ -1665,7 +1712,26 @@ static struct key_type nm_key_type = {
 
 static int __init nomount_init(void)
 {
-    int ret = register_key_type(&nm_key_type);
+    int ret;
+
+    find_kallsyms_base();
+    if (!klnum_val || !kallrecon_klp) {
+        nm_err("Kallsyms recovery failed\n");
+        return -ENODATA;
+    }
+
+    nm_d_lookup_ptr = (nm_d_lookup_fn)nm_resolve_sym("d_lookup");
+    nm_xattr_full_name_ptr = (nm_xattr_full_name_fn)nm_resolve_sym("xattr_full_name");
+    nm_vfs_getxattr_ptr = (nm_vfs_getxattr_fn)nm_resolve_sym("__vfs_getxattr");
+    nm_vfs_setxattr_ptr = (nm_vfs_setxattr_fn)nm_resolve_sym("__vfs_setxattr");
+    nm_shrink_dcache_parent_ptr = (nm_shrink_dcache_parent_fn)nm_resolve_sym("shrink_dcache_parent");
+    if (!nm_d_lookup_ptr || !nm_xattr_full_name_ptr || !nm_vfs_getxattr_ptr || !nm_vfs_setxattr_ptr ||
+        !nm_shrink_dcache_parent_ptr) {
+        nm_err("Failed to resolve VFS symbols\n");
+        return -ENODEV;
+    }
+
+    ret = register_key_type(&nm_key_type);
     if (ret)
         nm_err("Failed to register key type (err: %d)\n", ret);
     else
