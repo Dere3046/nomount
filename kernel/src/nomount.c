@@ -11,7 +11,7 @@
 
 typedef struct dentry *(*nm_d_lookup_fn)(const struct dentry *, const struct qstr *);
 typedef const char *(*nm_xattr_full_name_fn)(const struct xattr_handler *, const char *);
-typedef ssize_t (*nm_vfs_getxattr_fn)(struct dentry *, struct inode *, const char *, void *, size_t);
+typedef ssize_t (*nm_vfs_getxattr_fn)(struct dentry *, struct inode *, const char *, void *, size_t FLAGS_ARG);
 typedef int (*nm_vfs_setxattr_fn)(IDMAP_ARG struct dentry *, struct inode *, const char *, const void *, size_t, int);
 typedef void (*nm_shrink_dcache_parent_fn)(struct dentry *);
 
@@ -39,9 +39,9 @@ static __nocfi const char *nm_xattr_full_name(const struct xattr_handler *handle
     return nm_xattr_full_name_ptr ? nm_xattr_full_name_ptr(handler, name) : name;
 }
 
-static __nocfi ssize_t nm_vfs_getxattr(struct dentry *dentry, struct inode *inode, const char *name, void *value, size_t size)
+static __nocfi ssize_t nm_vfs_getxattr(struct dentry *dentry, struct inode *inode, const char *name, void *value, size_t size FLAGS_ARG)
 {
-    return nm_vfs_getxattr_ptr ? nm_vfs_getxattr_ptr(dentry, inode, name, value, size) : -ENOSYS;
+    return nm_vfs_getxattr_ptr ? nm_vfs_getxattr_ptr(dentry, inode, name, value, size FLAGS_VAL) : -ENOSYS;
 }
 
 static __nocfi int nm_vfs_setxattr(IDMAP_ARG struct dentry *dentry, struct inode *inode, const char *name, const void *value, size_t size, int flags)
